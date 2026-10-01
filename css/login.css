@@ -1,0 +1,18 @@
+.auth {
+    background-image: linear-gradient(rgba(0, 0, 0, 0.4), rgba(0, 0, 0, 0.4)), url('../pictures/Gemini_Generated_Image_j4b183j4b183j4b1.jpg');
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+}
+
+.form-card {
+    width: 360px;
+    padding: 28px;
+}
+
+@media (max-width: 480px) {
+    .form-card {
+        width: 100%;
+        padding: 24px;
+    }
+}
