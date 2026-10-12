@@ -16,7 +16,7 @@ CREATE TABLE books (
  title VARCHAR(200) NOT NULL,
  author VARCHAR(150) NOT NULL,
  description TEXT,
- status ENUM('Available','Borrowed') DEFAULT 'Available',
+ status ENUM('Available','Unavailable','Borrowed','Sold','Donated','Exchanged') NOT NULL DEFAULT 'Available',
  moderation_status ENUM('Pending','Approved','Rejected') NOT NULL DEFAULT 'Pending',
  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
  FOREIGN KEY(owner_id) REFERENCES users(id) ON DELETE CASCADE
@@ -31,6 +31,16 @@ CREATE TABLE borrow_requests (
  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
  FOREIGN KEY(book_id) REFERENCES books(id) ON DELETE CASCADE,
  FOREIGN KEY(requester_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE favorites (
+ id INT AUTO_INCREMENT PRIMARY KEY,
+ user_id INT NOT NULL,
+ book_id INT NOT NULL,
+ created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+ UNIQUE KEY unique_user_book (user_id, book_id),
+ FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+ FOREIGN KEY(book_id) REFERENCES books(id) ON DELETE CASCADE
 );
 
 INSERT INTO users(name,email,password) VALUES
