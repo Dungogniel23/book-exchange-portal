@@ -2,7 +2,8 @@
 session_start();
 require_once "config.php";
 
-$result = $conn->query("SELECT b.*, u.name AS owner_name FROM books b JOIN users u ON b.owner_id=u.id WHERE b.moderation_status='Approved' AND b.status='Available' ORDER BY b.created_at DESC LIMIT 12");
+$result = $conn->query("SELECT b.*, u.name AS owner_name FROM books b JOIN users u ON b.owner_id=u.id ORDER BY b.created_at DESC LIMIT 12");
+$result = $conn->query("SELECT b.*, u.name AS owner_name FROM books b JOIN users u ON b.owner_id=u.id WHERE b.moderation_status='Approved' ORDER BY b.created_at DESC LIMIT 12");
 ?>
 <!DOCTYPE html>
 <html lang="en">
