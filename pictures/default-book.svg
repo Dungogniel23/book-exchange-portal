@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 420" role="img" aria-labelledby="title">
+  <title id="title">Book cover placeholder</title>
+  <rect width="600" height="420" rx="24" fill="#e9ecf8"/>
+  <path d="M185 100h100c27 0 48 21 48 48v180H233c-27 0-48-21-48-48V100Z" fill="#5367e8"/>
+  <path d="M415 100H315c-27 0-48 21-48 48v180h100c27 0 48-21 48-48V100Z" fill="#7181ef"/>
+  <path d="M300 148v180" stroke="#fff" stroke-width="12"/>
+  <path d="M215 155h48m-48 32h48m-48 32h48m74-64h48m-48 32h48m-48 32h48" stroke="#fff" stroke-width="8" stroke-linecap="round"/>
+</svg>

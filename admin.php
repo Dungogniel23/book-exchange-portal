@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once "config.php";
+require_once "includes/book_images.php";
 
 if (!isset($_SESSION['user_id'])) {
     header("Location: login.php");
@@ -31,10 +32,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $notice = 'Your session expired. Please try again.';
     } elseif ($recordId && in_array($action, ['approve_book', 'reject_book', 'delete_book'], true)) {
         if ($action === 'delete_book') {
+            $statement = $conn->prepare("SELECT image FROM books WHERE id=? AND moderation_status='Pending'");
+            $statement->bind_param("i", $recordId);
+            $statement->execute();
+            $bookToDelete = $statement->get_result()->fetch_assoc();
             $statement = $conn->prepare("DELETE FROM books WHERE id=? AND moderation_status='Pending'");
             $statement->bind_param("i", $recordId);
             $statement->execute();
-            $notice = $statement->affected_rows ? 'Book listing deleted.' : 'That listing is no longer pending review.';
+            if ($statement->affected_rows) {
+                book_image_delete($bookToDelete['image'] ?? null);
+                $notice = 'Book listing deleted.';
+            } else {
+                $notice = 'That listing is no longer pending review.';
+            }
         } else {
             $status = $action === 'approve_book' ? 'Approved' : 'Rejected';
             $statement = $conn->prepare("UPDATE books SET moderation_status=? WHERE id=? AND moderation_status='Pending'");
@@ -75,10 +85,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($recordId === $userId) {
             $notice = 'You cannot remove your own account.';
         } else {
+            $statement = $conn->prepare("SELECT image FROM books WHERE owner_id=?");
+            $statement->bind_param("i", $recordId);
+            $statement->execute();
+            $imageResult = $statement->get_result();
+            $imagesToDelete = [];
+            while ($imageRow = $imageResult->fetch_assoc()) {
+                $imagesToDelete[] = $imageRow['image'];
+            }
             $statement = $conn->prepare("DELETE FROM users WHERE id=?");
             $statement->bind_param("i", $recordId);
             $statement->execute();
-            $notice = $statement->affected_rows ? 'User removed successfully.' : 'User not found.';
+            if ($statement->affected_rows) {
+                foreach ($imagesToDelete as $imageToDelete) {
+                    book_image_delete($imageToDelete);
+                }
+                $notice = 'User removed successfully.';
+            } else {
+                $notice = 'User not found.';
+            }
         }
     }
 
@@ -122,6 +147,7 @@ $users = $conn->query("SELECT u.id, u.name, u.email, u.role, u.created_at, COUNT
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Administration | BookBridge</title>
 <link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/book-images.css">
 </head>
 <body>
 <header class="navbar"><a class="brand" href="index.php">📚 BookBridge</a><nav><a href="index.php">Home</a><a href="books.php">Browse Books</a><a class="active" href="admin.php">Moderation</a><a class="btn small" href="logout.php">Logout</a></nav></header>
@@ -135,11 +161,14 @@ $users = $conn->query("SELECT u.id, u.name, u.email, u.role, u.created_at, COUNT
         <div class="book-grid">
         <?php while ($book = $pendingBooks->fetch_assoc()): ?>
             <article class="book-card">
+                <div class="cover-placeholder"><img class="book-image" src="<?=htmlspecialchars(book_image_url($book['image'] ?? null), ENT_QUOTES, 'UTF-8')?>" alt="Cover of <?=htmlspecialchars($book['title'], ENT_QUOTES, 'UTF-8')?>"></div>
                 <div class="book-info">
                     <?php if ($book['is_duplicate']): ?><div class="alert">Possible duplicate: another listing has the same title and author.</div><?php endif; ?>
                     <span class="badge">Pending review</span>
                     <h2><?=htmlspecialchars($book['title'])?></h2>
                     <p>by <?=htmlspecialchars($book['author'])?></p>
+                    <?php if (!empty($book['condition'])): ?><span class="badge">Condition: <?=htmlspecialchars($book['condition'])?></span><?php endif; ?>
+                    <?php if (!empty($book['condition_review'])): ?><p class="condition-review"><?=nl2br(htmlspecialchars($book['condition_review']))?></p><?php endif; ?>
                     <p><?=nl2br(htmlspecialchars($book['description'] ?? ''))?></p>
                     <small>Posted by <?=htmlspecialchars($book['owner_name'])?> on <?=htmlspecialchars($book['created_at'])?></small>
                     <p><a href="book-details.php?id=<?=(int)$book['id']?>">View listing</a></p>

@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once "config.php";
+require_once "includes/book_images.php";
 
 if (!isset($_SESSION['user_id'])) {
 	header("Location: login.php");
@@ -8,6 +9,7 @@ if (!isset($_SESSION['user_id'])) {
 }
 
 $userId = (int)$_SESSION['user_id'];
+$conditions = ['Like New', 'Good', 'Fair', 'Poor'];
 if (!isset($_SESSION['csrf_token'])) {
 	$_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 }
@@ -18,7 +20,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 	$recordId = filter_input(INPUT_POST, 'record_id', FILTER_VALIDATE_INT);
 	$notice = 'Invalid request.';
 
-	if (!is_string($token) || !hash_equals($_SESSION['csrf_token'], $token)) {
+	if (!empty($_SERVER['CONTENT_LENGTH']) && $_POST === [] && $_FILES === []) {
+		$notice = 'The submitted form exceeded the server request-size limit. Please choose a smaller image.';
+	} elseif (!is_string($token) || !hash_equals($_SESSION['csrf_token'], $token)) {
 		$notice = 'Your session expired. Please try again.';
 	} elseif ($recordId && $action === 'set_status') {
 		$status = $_POST['status'] ?? '';
@@ -48,24 +52,76 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 			$notice = 'Listing marked ' . strtolower($status) . '.';
 		}
 	} elseif ($recordId && $action === 'edit_listing') {
-		$title = trim($_POST['title'] ?? '');
-		$author = trim($_POST['author'] ?? '');
-		$description = trim($_POST['description'] ?? '');
+		$titleInput = $_POST['title'] ?? '';
+		$authorInput = $_POST['author'] ?? '';
+		$conditionInput = $_POST['condition'] ?? '';
+		$conditionReviewInput = $_POST['condition_review'] ?? '';
+		$title = is_string($titleInput) ? trim($titleInput) : '';
+		$author = is_string($authorInput) ? trim($authorInput) : '';
+		$descriptionInput = $_POST['description'] ?? '';
+		$description = is_string($descriptionInput) ? trim($descriptionInput) : '';
+		$conditionReview = is_string($conditionReviewInput) ? trim($conditionReviewInput) : '';
 		if ($title === '' || $author === '') {
 			$notice = 'Title and author are required.';
+		} elseif (!is_valid_book_condition($conditionInput)) {
+			$notice = 'Choose a valid book condition.';
+		} elseif ($conditionReview === '') {
+			$notice = "Please describe the book's actual condition.";
 		} else {
-			$statement = $conn->prepare("UPDATE books SET title=?, author=?, description=?, moderation_status='Pending' WHERE id=? AND owner_id=?");
-			$statement->bind_param("sssii", $title, $author, $description, $recordId, $userId);
+			$statement = $conn->prepare("SELECT image FROM books WHERE id=? AND owner_id=?");
+			$statement->bind_param("ii", $recordId, $userId);
 			$statement->execute();
-			$notice = $statement->affected_rows
-				? 'Listing updated and sent for admin review.'
-				: 'Listing was unchanged or could not be found.';
+			$ownedBook = $statement->get_result()->fetch_assoc();
+			if (!$ownedBook) {
+				$notice = 'Listing not found.';
+			} else {
+				$uploadError = '';
+				$newImage = book_image_upload($_FILES['image'] ?? [], $uploadError);
+				if ($uploadError !== '') {
+					$notice = $uploadError;
+				} else {
+					try {
+						$statement = $conn->prepare("UPDATE books
+							SET title=?, author=?, description=?, image=COALESCE(?, image), `condition`=?, condition_review=?, moderation_status='Pending'
+							WHERE id=? AND owner_id=?");
+						if (!$statement) {
+							throw new mysqli_sql_exception($conn->error);
+						}
+						$statement->bind_param("ssssssii", $title, $author, $description, $newImage, $conditionInput, $conditionReview, $recordId, $userId);
+						if (!$statement->execute()) {
+							throw new mysqli_sql_exception($statement->error);
+						}
+						if ($statement->affected_rows) {
+							if ($newImage !== null) {
+								book_image_delete($ownedBook['image']);
+							}
+							$notice = 'Listing updated and sent for admin review.';
+						} else {
+							book_image_delete($newImage);
+							$notice = 'Listing was unchanged.';
+						}
+					} catch (mysqli_sql_exception $exception) {
+						book_image_delete($newImage);
+						error_log('Unable to update book listing: ' . $exception->getMessage());
+						$notice = 'The listing could not be updated. Please try again.';
+					}
+				}
+			}
 		}
 	} elseif ($recordId && $action === 'delete_listing') {
+		$statement = $conn->prepare("SELECT image FROM books WHERE id=? AND owner_id=?");
+		$statement->bind_param("ii", $recordId, $userId);
+		$statement->execute();
+		$ownedBook = $statement->get_result()->fetch_assoc();
 		$statement = $conn->prepare("DELETE FROM books WHERE id=? AND owner_id=?");
 		$statement->bind_param("ii", $recordId, $userId);
 		$statement->execute();
-		$notice = $statement->affected_rows ? 'Listing deleted.' : 'Listing not found.';
+		if ($statement->affected_rows) {
+			book_image_delete($ownedBook['image'] ?? null);
+			$notice = 'Listing deleted.';
+		} else {
+			$notice = 'Listing not found.';
+		}
 	} elseif ($recordId && $action === 'unsave_book') {
 		$statement = $conn->prepare("DELETE FROM favorites WHERE user_id=? AND book_id=?");
 		$statement->bind_param("ii", $userId, $recordId);
@@ -146,7 +202,7 @@ $statement->bind_param("i", $userId);
 $statement->execute();
 $outgoingRequests = $statement->get_result();
 
-$statement = $conn->prepare("SELECT b.id, b.title, b.author, b.status, b.owner_id, owner.name AS owner_name
+$statement = $conn->prepare("SELECT b.id, b.title, b.author, b.status, b.owner_id, b.image, b.`condition`, b.condition_review, owner.name AS owner_name
 	FROM favorites f
 	JOIN books b ON b.id=f.book_id
 	JOIN users owner ON owner.id=b.owner_id
@@ -163,10 +219,13 @@ $favorites = $statement->get_result();
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Profile | BookBridge</title>
 <link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/book-images.css">
+<script src="js/book-image-preview.js" defer></script>
 <style>
 .profile-listing-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:16px;width:100%;}
 .profile-listing-card{display:grid;grid-template-columns:minmax(130px,190px) minmax(0,1fr);min-width:0;overflow:visible;}
 .profile-listing-card .cover-placeholder{height:100%;min-height:200px;border-radius:13px 0 0 13px;}
+.profile-listing-card .cover-placeholder .book-image{min-height:200px;}
 .profile-listing-card .book-info{display:flex;flex-direction:column;align-items:flex-start;gap:10px;min-width:0;width:100%;}
 .profile-listing-card .book-info h3,.profile-listing-card .book-info p,.profile-listing-card .book-info>a{max-width:100%;overflow-wrap:anywhere;}
 .profile-listing-card .seller-status-form{display:flex;flex-wrap:wrap;align-items:center;gap:10px;width:100%;min-width:0;margin:8px 0;}
@@ -192,12 +251,14 @@ $favorites = $statement->get_result();
 		<?php while ($book = $books->fetch_assoc()): ?>
 			<?php $moderationLabel = $book['moderation_status'] === 'Pending' ? 'Pending Approval' : $book['moderation_status']; ?>
 			<article class="book-card profile-listing-card">
-				<div class="cover-placeholder"><?=htmlspecialchars(strtoupper(substr($book['title'], 0, 1)))?></div>
+				<div class="cover-placeholder"><img class="book-image" src="<?=htmlspecialchars(book_image_url($book['image'] ?? null), ENT_QUOTES, 'UTF-8')?>" alt="Cover of <?=htmlspecialchars($book['title'], ENT_QUOTES, 'UTF-8')?>"></div>
 				<div class="book-info">
 					<span class="badge"><?=htmlspecialchars($book['status'])?></span>
 					<span class="badge"><?=htmlspecialchars($moderationLabel)?></span>
 					<h3><?=htmlspecialchars($book['title'])?></h3>
 					<p><?=htmlspecialchars($book['author'])?></p>
+					<?php if (!empty($book['condition'])): ?><span class="badge">Condition: <?=htmlspecialchars($book['condition'])?></span><?php endif; ?>
+					<?php if (!empty($book['condition_review'])): ?><p class="condition-review"><?=nl2br(htmlspecialchars($book['condition_review']))?></p><?php endif; ?>
 					<a href="book-details.php?id=<?=(int)$book['id']?>">View listing</a>
 					<form method="post" class="hero-actions seller-status-form">
 						<input type="hidden" name="csrf_token" value="<?=htmlspecialchars($_SESSION['csrf_token'])?>">
@@ -214,12 +275,25 @@ $favorites = $statement->get_result();
 					</form>
 					<details>
 						<summary>Edit Listing</summary>
-						<form method="post" class="form">
+						<form method="post" enctype="multipart/form-data" class="form">
 							<input type="hidden" name="csrf_token" value="<?=htmlspecialchars($_SESSION['csrf_token'])?>">
 							<input type="hidden" name="record_id" value="<?=(int)$book['id']?>">
 							<label>Title<input name="title" value="<?=htmlspecialchars($book['title'])?>" required></label>
 							<label>Author<input name="author" value="<?=htmlspecialchars($book['author'])?>" required></label>
 							<label>Description<textarea name="description"><?=htmlspecialchars($book['description'] ?? '')?></textarea></label>
+							<label>Replace book image <span class="field-hint">JPG, JPEG, PNG, or WEBP; maximum 5 MB. Leave blank to keep the current image.</span>
+								<input type="file" name="image" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" data-image-preview="edit-book-image-<?=(int)$book['id']?>">
+							</label>
+							<div class="image-preview-frame"><img id="edit-book-image-<?=(int)$book['id']?>" class="image-preview" src="<?=htmlspecialchars(book_image_url($book['image'] ?? null), ENT_QUOTES, 'UTF-8')?>" alt="Preview of the book image"></div>
+							<label>Book Condition
+								<select name="condition" required>
+									<option value="">Select the book’s condition</option>
+									<?php foreach ($conditions as $conditionOption): ?>
+										<option value="<?=htmlspecialchars($conditionOption, ENT_QUOTES, 'UTF-8')?>" <?=($book['condition'] ?? '') === $conditionOption ? 'selected' : ''?>><?=htmlspecialchars($conditionOption, ENT_QUOTES, 'UTF-8')?></option>
+									<?php endforeach; ?>
+								</select>
+							</label>
+							<label>Condition Description<textarea name="condition_review" rows="4" required><?=htmlspecialchars($book['condition_review'] ?? '')?></textarea></label>
 							<button class="btn" name="action" value="edit_listing">Save Listing</button>
 						</form>
 					</details>
@@ -240,7 +314,7 @@ $favorites = $statement->get_result();
 	<?php else: ?>
 		<div class="book-grid">
 		<?php while ($favorite = $favorites->fetch_assoc()): ?>
-			<article class="book-card"><div class="cover-placeholder"><?=htmlspecialchars(strtoupper(substr($favorite['title'], 0, 1)))?></div><div class="book-info"><span class="badge"><?=htmlspecialchars($favorite['status'])?></span><h3><?=htmlspecialchars($favorite['title'])?></h3><p>by <?=htmlspecialchars($favorite['author'])?></p><small>Owner: <?=htmlspecialchars($favorite['owner_name'])?></small><a class="btn full" href="book-details.php?id=<?=(int)$favorite['id']?>">View Details</a><form method="post"><input type="hidden" name="csrf_token" value="<?=htmlspecialchars($_SESSION['csrf_token'])?>"><input type="hidden" name="record_id" value="<?=(int)$favorite['id']?>"><button class="btn small outline" name="action" value="unsave_book">Remove from Favorites</button></form></div></article>
+			<article class="book-card"><div class="cover-placeholder"><img class="book-image" src="<?=htmlspecialchars(book_image_url($favorite['image'] ?? null), ENT_QUOTES, 'UTF-8')?>" alt="Cover of <?=htmlspecialchars($favorite['title'], ENT_QUOTES, 'UTF-8')?>"></div><div class="book-info"><span class="badge"><?=htmlspecialchars($favorite['status'])?></span><h3><?=htmlspecialchars($favorite['title'])?></h3><p>by <?=htmlspecialchars($favorite['author'])?></p><?php if (!empty($favorite['condition'])): ?><span class="badge">Condition: <?=htmlspecialchars($favorite['condition'])?></span><?php endif; ?><?php if (!empty($favorite['condition_review'])): ?><p class="condition-review"><?=nl2br(htmlspecialchars($favorite['condition_review']))?></p><?php endif; ?><small>Owner: <?=htmlspecialchars($favorite['owner_name'])?></small><a class="btn full" href="book-details.php?id=<?=(int)$favorite['id']?>">View Details</a><form method="post"><input type="hidden" name="csrf_token" value="<?=htmlspecialchars($_SESSION['csrf_token'])?>"><input type="hidden" name="record_id" value="<?=(int)$favorite['id']?>"><button class="btn small outline" name="action" value="unsave_book">Remove from Favorites</button></form></div></article>
 		<?php endwhile; ?>
 		</div>
 	<?php endif; ?>

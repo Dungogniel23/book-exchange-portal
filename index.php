@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once "config.php";
+require_once "includes/book_images.php";
 
 $result = $conn->query("SELECT b.*, u.name AS owner_name FROM books b JOIN users u ON b.owner_id=u.id WHERE b.moderation_status='Approved' AND b.status='Available' ORDER BY b.created_at DESC LIMIT 12");
 ?>
@@ -11,6 +12,7 @@ $result = $conn->query("SELECT b.*, u.name AS owner_name FROM books b JOIN users
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>BookBridge - Book Borrowing & Exchange</title>
 <link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/book-images.css">
 </head>
 <body>
 <header class="navbar">
@@ -55,11 +57,13 @@ $result = $conn->query("SELECT b.*, u.name AS owner_name FROM books b JOIN users
   <div class="book-grid">
   <?php while($book=$result->fetch_assoc()): ?>
     <article class="book-card">
-      <div class="cover-placeholder"><?=htmlspecialchars(strtoupper(substr($book['title'],0,1)))?></div>
+      <div class="cover-placeholder"><img class="book-image" src="<?=htmlspecialchars(book_image_url($book['image'] ?? null), ENT_QUOTES, 'UTF-8')?>" alt="Cover of <?=htmlspecialchars($book['title'], ENT_QUOTES, 'UTF-8')?>"></div>
       <div class="book-info">
         <span class="badge"><?=htmlspecialchars($book['status'])?></span>
         <h3><?=htmlspecialchars($book['title'])?></h3>
         <p>by <?=htmlspecialchars($book['author'])?></p>
+        <?php if (!empty($book['condition'])): ?><span class="badge">Condition: <?=htmlspecialchars($book['condition'])?></span><?php endif; ?>
+        <?php if (!empty($book['condition_review'])): ?><p class="condition-review"><?=nl2br(htmlspecialchars($book['condition_review']))?></p><?php endif; ?>
         <small>Posted by <?=htmlspecialchars($book['owner_name'])?></small>
         <a class="btn full" href="book-details.php?id=<?=$book['id']?>">View Details</a>
       </div>

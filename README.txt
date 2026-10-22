@@ -34,8 +34,20 @@ FEATURES
 - User profile
 - My posted books
 - My borrow requests
+- Book cover uploads with preview and validated JPG/JPEG/PNG/WEBP files
+- Book condition ratings and owner condition descriptions
 - Admin listing review with duplicate warnings
 - MySQL database connection
+
+BOOK IMAGES AND CONDITION DETAILS
+- Fresh installation: database/book_exchange.sql creates the image and condition columns. You may also import database/book_image_condition_migration.sql; it safely skips columns that already exist.
+- Existing installation: select the book_exchange database in phpMyAdmin and import database/book_image_condition_migration.sql. Do not re-import book_exchange.sql into an existing installation; the migration adds only missing columns and preserves existing rows.
+- The migration checks each column separately and can be rerun safely.
+- Back up the database before running the migration. Existing listings keep empty image and condition fields until their owners edit them.
+- Store images under uploads/books/. Apache must be allowed to read the .htaccess file and the PHP/Apache account must be able to write to this directory. Do not allow script execution in uploads.
+- The application accepts JPG/JPEG, PNG, and WEBP images up to 5 MB. If PHP's limits are lower, set upload_max_filesize to at least 6M and post_max_size to at least 8M in C:\xampp\php\php.ini, then restart Apache.
+- Owners can replace an image and update condition details from Profile > Edit Listing. Replacing or deleting a listing removes its previous stored image where possible.
+- To roll back, restore the database backup and the backed-up project files together. Do not drop the new columns after users have saved data unless that data is also backed up.
 
 ADMIN SETUP
 - For an existing database, import database/admin_moderation_migration.sql once in phpMyAdmin.

@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once "config.php";
+require_once "includes/book_images.php";
 
 $id = filter_input(INPUT_GET, 'id', FILTER_VALIDATE_INT) ?: 0;
 $statement = $conn->prepare("SELECT b.*, u.name AS owner_name, u.email AS owner_email
@@ -98,14 +99,18 @@ if ($userId) {
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title><?=htmlspecialchars($book['title'])?> | BookBridge</title>
 <link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/book-images.css">
 </head>
 <body>
 <header class="navbar"><a class="brand" href="index.php">📚 BookBridge</a><nav><a href="index.php">Home</a><a href="books.php">Browse Books</a><?php if ($userId): ?><a href="post-book.php">Post a Book</a><a href="requests.php">Requests</a><a href="profile.php">Profile</a><a class="btn small" href="logout.php">Logout</a><?php else: ?><a href="login.php">Login</a><?php endif; ?></nav></header>
 <main class="container page">
-	<div class="detail"><div class="detail-cover"><?=htmlspecialchars(strtoupper(substr($book['title'], 0, 1)))?></div><div>
+	<div class="detail"><div class="detail-cover"><img class="book-image" src="<?=htmlspecialchars(book_image_url($book['image'] ?? null), ENT_QUOTES, 'UTF-8')?>" alt="Cover of <?=htmlspecialchars($book['title'], ENT_QUOTES, 'UTF-8')?>"></div><div>
 		<span class="badge"><?=htmlspecialchars($book['status'])?></span>
 		<?php if ($book['moderation_status'] !== 'Approved'): ?><p class="alert">Listing review status: <?=htmlspecialchars($book['moderation_status'])?></p><?php endif; ?>
-		<h1><?=htmlspecialchars($book['title'])?></h1><h3>by <?=htmlspecialchars($book['author'])?></h3><p><?=nl2br(htmlspecialchars($book['description'] ?? ''))?></p><div class="owner"><strong>Owner:</strong> <?=htmlspecialchars($book['owner_name'])?></div>
+		<h1><?=htmlspecialchars($book['title'])?></h1><h3>by <?=htmlspecialchars($book['author'])?></h3>
+		<?php if (!empty($book['condition'])): ?><p><span class="badge">Condition: <?=htmlspecialchars($book['condition'])?></span></p><?php endif; ?>
+		<?php if (!empty($book['condition_review'])): ?><section><h2>Condition Description</h2><p class="condition-review"><?=nl2br(htmlspecialchars($book['condition_review']))?></p></section><?php endif; ?>
+		<p><?=nl2br(htmlspecialchars($book['description'] ?? ''))?></p><div class="owner"><strong>Owner:</strong> <?=htmlspecialchars($book['owner_name'])?></div>
 		<?php if ($message): ?><div class="success" role="status"><?=htmlspecialchars($message)?></div><?php endif; ?>
 		<?php if ($userId && $book['moderation_status'] === 'Approved' && $book['status'] === 'Available'): ?><form method="post" class="inline"><input type="hidden" name="csrf_token" value="<?=htmlspecialchars($_SESSION['csrf_token'])?>"><button class="btn outline" name="action" value="<?=$isFavorite ? 'remove_favorite' : 'save_favorite'?>"><?=$isFavorite ? 'Unsave' : '♥ Save to Favorites'?></button></form><?php elseif (!$userId): ?><a class="btn outline" href="login.php">♥ Save to Favorites</a><?php endif; ?>
 		<?php if ($userId && $userId !== (int)$book['owner_id'] && $book['status'] === 'Available' && $book['moderation_status'] === 'Approved'): ?><form method="post" class="form"><input type="hidden" name="csrf_token" value="<?=htmlspecialchars($_SESSION['csrf_token'])?>"><label>Message to owner<textarea name="message" placeholder="Hi! I would like to borrow this book."></textarea></label><button class="btn" name="action" value="request_book">Request to Borrow</button></form><?php elseif (!$userId): ?><a class="btn" href="login.php">Login to Request</a><?php endif; ?>

@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once "config.php";
+require_once "includes/book_images.php";
 
 $userId = isset($_SESSION['user_id']) ? (int)$_SESSION['user_id'] : 0;
 $query = trim($_GET['q'] ?? '');
@@ -77,6 +78,7 @@ if ($query !== '') {
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Browse Books | BookBridge</title>
 <link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/book-images.css">
 </head>
 <body>
 <header class="navbar"><a class="brand" href="index.php">📚 BookBridge</a><nav><a href="index.php">Home</a><a class="active" href="books.php">Browse Books</a><?php if (isset($_SESSION['user_id'])): ?><?php if (($_SESSION['role'] ?? '') === 'admin'): ?><a href="admin.php">Moderation</a><?php endif; ?><a href="post-book.php">Post a Book</a><a href="requests.php">Requests</a><a href="profile.php">Profile</a><a class="btn small" href="logout.php">Logout</a><?php else: ?><a href="login.php">Login</a><a class="btn small" href="register.php">Register</a><?php endif; ?></nav></header>
@@ -87,7 +89,7 @@ if ($query !== '') {
 	<?php if ($result->num_rows === 0): ?><p>No available approved books matched your search.</p><?php else: ?>
 		<div class="book-grid">
 		<?php while ($book = $result->fetch_assoc()): ?>
-			<article class="book-card"><div class="cover-placeholder"><?=htmlspecialchars(strtoupper(substr($book['title'], 0, 1)))?></div><div class="book-info"><span class="badge"><?=htmlspecialchars($book['status'])?></span><h3><?=htmlspecialchars($book['title'])?></h3><p>by <?=htmlspecialchars($book['author'])?></p><small>Owner: <?=htmlspecialchars($book['owner_name'])?></small><a class="btn full" href="book-details.php?id=<?=(int)$book['id']?>">View Details</a>
+			<article class="book-card"><div class="cover-placeholder"><img class="book-image" src="<?=htmlspecialchars(book_image_url($book['image'] ?? null), ENT_QUOTES, 'UTF-8')?>" alt="Cover of <?=htmlspecialchars($book['title'], ENT_QUOTES, 'UTF-8')?>"></div><div class="book-info"><span class="badge"><?=htmlspecialchars($book['status'])?></span><h3><?=htmlspecialchars($book['title'])?></h3><p>by <?=htmlspecialchars($book['author'])?></p><?php if (!empty($book['condition'])): ?><span class="badge">Condition: <?=htmlspecialchars($book['condition'])?></span><?php endif; ?><?php if (!empty($book['condition_review'])): ?><p class="condition-review"><?=nl2br(htmlspecialchars($book['condition_review']))?></p><?php endif; ?><small>Owner: <?=htmlspecialchars($book['owner_name'])?></small><a class="btn full" href="book-details.php?id=<?=(int)$book['id']?>">View Details</a>
 				<?php if ($userId): ?><form method="post"><input type="hidden" name="csrf_token" value="<?=htmlspecialchars($_SESSION['csrf_token'])?>"><input type="hidden" name="book_id" value="<?=(int)$book['id']?>"><button class="btn full outline" name="action" value="<?=$book['is_favorite'] ? 'remove_favorite' : 'save_favorite'?>"><?=$book['is_favorite'] ? 'Unsave' : '♥ Save to Favorites'?></button></form><?php else: ?><a class="btn full outline" href="login.php">♥ Save to Favorites</a><?php endif; ?>
 			</div></article>
 		<?php endwhile; ?>
